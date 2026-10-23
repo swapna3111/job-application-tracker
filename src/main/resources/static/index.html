@@ -1,0 +1,242 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Application Tracker</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f3f6fc;
+            color: #172033;
+        }
+        header {
+            background: #243b80;
+            color: white;
+            padding: 24px 7%;
+        }
+        header h1 { margin: 0 0 8px; }
+        header p { margin: 0; color: #dce5ff; }
+        main { max-width: 1050px; margin: 30px auto; padding: 0 20px; }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .card, form, .applications {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 3px 14px #1720330d;
+        }
+        .stat-number { font-size: 28px; font-weight: bold; margin-top: 8px; }
+        form {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 14px;
+            margin-bottom: 24px;
+        }
+        form h2 { grid-column: 1 / -1; margin: 0; }
+        input, select, textarea, button {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #d7ddec;
+            border-radius: 7px;
+            font: inherit;
+        }
+        textarea { min-height: 44px; }
+        button {
+            background: #3155b7;
+            color: white;
+            border: 0;
+            cursor: pointer;
+        }
+        button:hover { background: #243b80; }
+        .applications h2 { margin-top: 0; }
+        .job {
+            border-top: 1px solid #e6eaf2;
+            padding: 16px 0;
+        }
+        .job p { color: #606b80; }
+        .job button { width: auto; margin-right: 8px; padding: 8px 12px; }
+        .delete { background: #b42335; }
+        .message { margin-bottom: 16px; color: #243b80; }
+    </style>
+</head>
+<body>
+<header>
+    <h1>Job Application Tracker</h1>
+    <p>Keep your job search organized in one place.</p>
+</header>
+
+<main>
+    <section class="stats">
+        <div class="card">Total applications<div class="stat-number" id="total">0</div></div>
+        <div class="card">Interviews<div class="stat-number" id="interviews">0</div></div>
+        <div class="card">Selected<div class="stat-number" id="selected">0</div></div>
+    </section>
+
+    <div id="message" class="message">Connecting to your backend...</div>
+
+    <form id="jobForm">
+        <h2>Add a job application</h2>
+        <input id="company" placeholder="Company name" required>
+        <input id="role" placeholder="Job role" required>
+        <input id="date" type="date" required>
+        <select id="status">
+            <option>Applied</option>
+            <option>Assessment</option>
+            <option>Interview</option>
+            <option>Selected</option>
+            <option>Rejected</option>
+        </select>
+        <textarea id="notes" placeholder="Notes (optional)"></textarea>
+        <button type="submit">Add application</button>
+    </form>
+
+    <section class="applications">
+        <h2>Your applications</h2>
+        <select id="filter">
+            <option value="All">All statuses</option>
+            <option>Applied</option>
+            <option>Assessment</option>
+            <option>Interview</option>
+            <option>Selected</option>
+            <option>Rejected</option>
+        </select>
+        <div id="jobs"></div>
+    </section>
+</main>
+
+<script>
+    const api = "/api/jobs";
+    let applications = [];
+
+    const message = document.getElementById("message");
+
+    async function loadJobs() {
+        try {
+            const response = await fetch(api);
+            if (!response.ok) throw new Error("API returned HTTP " + response.status);
+            applications = await response.json();
+            message.textContent = "Connected successfully.";
+            renderJobs();
+        } catch (error) {
+            message.textContent =
+                "The dashboard loaded, but the job API is not working yet. " +
+                "Please check the Spring Boot controller.";
+            console.error(error);
+        }
+    }
+
+    function renderJobs() {
+        document.getElementById("total").textContent = applications.length;
+        document.getElementById("interviews").textContent =
+            applications.filter(j => j.status === "Interview").length;
+        document.getElementById("selected").textContent =
+            applications.filter(j => j.status === "Selected").length;
+
+        const filter = document.getElementById("filter").value;
+        const jobs = document.getElementById("jobs");
+        jobs.innerHTML = "";
+
+        const visible = applications.filter(j =>
+            filter === "All" || j.status === filter
+        );
+
+        if (!visible.length) {
+            jobs.textContent = "No applications to show yet.";
+            return;
+        }
+
+        visible.forEach(job => {
+            const item = document.createElement("div");
+            item.className = "job";
+
+            const heading = document.createElement("h3");
+            heading.textContent = job.companyName + " — " + job.jobRole;
+
+            const details = document.createElement("p");
+            details.textContent =
+                (job.applicationDate || "No date") + " · " + job.status;
+
+            const notes = document.createElement("p");
+            notes.textContent = job.notes || "";
+
+            const edit = document.createElement("button");
+            edit.textContent = "Edit";
+            edit.onclick = () => editJob(job);
+
+            const remove = document.createElement("button");
+            remove.textContent = "Delete";
+            remove.className = "delete";
+            remove.onclick = () => deleteJob(job.id);
+
+            item.append(heading, details, notes, edit, remove);
+            jobs.appendChild(item);
+        });
+    }
+
+    document.getElementById("jobForm").addEventListener("submit", async event => {
+        event.preventDefault();
+
+        const job = {
+            companyName: document.getElementById("company").value.trim(),
+            jobRole: document.getElementById("role").value.trim(),
+            applicationDate: document.getElementById("date").value,
+            status: document.getElementById("status").value,
+            notes: document.getElementById("notes").value.trim()
+        };
+
+        try {
+            const response = await fetch(api, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(job)
+            });
+            if (!response.ok) throw new Error("Could not save application");
+            event.target.reset();
+            await loadJobs();
+        } catch (error) {
+            message.textContent = error.message + ". Check that the backend is running.";
+        }
+    });
+
+    async function deleteJob(id) {
+        if (!confirm("Delete this application?")) return;
+        try {
+            const response = await fetch(`${api}/${id}`, { method: "DELETE" });
+            if (!response.ok) throw new Error("Could not delete application");
+            await loadJobs();
+        } catch (error) {
+            message.textContent = error.message;
+        }
+    }
+
+    async function editJob(job) {
+        const status = prompt("Enter new status: Applied, Assessment, Interview, Selected, or Rejected", job.status);
+        if (!status) return;
+        const updated = { ...job, status: status.trim() };
+        try {
+            const response = await fetch(`${api}/${job.id}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(updated)
+            });
+            if (!response.ok) throw new Error("Could not update application");
+            await loadJobs();
+        } catch (error) {
+            message.textContent = error.message;
+        }
+    }
+
+    document.getElementById("filter").addEventListener("change", renderJobs);
+    loadJobs();
+</script>
+</body>
+</html>
+
